@@ -6,3 +6,19 @@
 x<- 1:999
 sum(x[x %%3 == 0 | x %% 5 == 0])
 
+#slow fizzbuzzy
+#pass 3 arguments to the function
+#fpe(1000,3,5)
+fpe1<-function(x,y,z) {
+result<-c()
+for (i in 1:x-1) {
+    if (i%%y*z==0) {
+        result<-append(result, i)}
+    else if (i%%y==0) {
+        result<-append(result, i)}
+    else if (i%%z==0) {
+        result<-append(result,i)}
+}
+return(sum(result))
+}
+
