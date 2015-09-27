@@ -1,0 +1,33 @@
+#FizzBuzz
+#pretty long version with for loops
+#must pass three arguments in the function call:
+#FizzBuzz(3,5,100)
+FizzBuzz <- function(a,b,n) {
+  x<-rep(NA,n)
+  for (i in 1:n) {
+    if (i %% (a*b) == 0) {
+      x[i] <- "FizzBuzz"
+    } else if (i %% a == 0) {
+      x[i] <- "Fizz"
+    } else if (i %% b == 0) {
+      x[i] <- "Buzz"
+    } else {
+      x[i] <- i
+    }
+  }
+  print(x)
+}
+
+#Reverse String
+#long version with for loops
+#must pass a string in the function call:
+#ReverseString("ASDF")
+ReverseString <- function(x) {
+    g <- rep(NA,nchar(x)) 
+  h <- strsplit(x, "")
+  for (i in 1:length(h[[1]])) {
+      g[i] <- h[[1]][[length(h[[1]]) - i + 1]]
+      i = i - 1
+  }
+  print(paste0(unlist(g), collapse=""))
+}
