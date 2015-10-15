@@ -1,0 +1,280 @@
+library(forecast)
+library(tseries)
+library(RMySQL)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(data.table)
+
+memory.limit()
+#options(warn=-1)
+#add names in dbs
+#add names in totaldbs
+dbs <- c("db")
+totaltbs <- c("tb1","tb2...")
+
+#connect to databases, for each database in databases go through tablenames
+con <- dbConnect(MySQL(), dbname = dbs[1], username = "usernamehere", password = "pwdhere", host="hosthere")
+
+
+#get the tablenames from the database that match the tablenames in the connection
+cleanedtbs <- totaldbs[totaldbs %in% dbListTables(con)]
+out <- list(length(tablenamesclean))
+
+#connection handling
+killDbConnections <- function () {
+  
+  all_cons <- dbListConnections(MySQL())
+  
+  print(all_cons)
+  
+  for(con in all_cons)
+    +  dbDisconnect(con)
+  
+  print(paste(length(all_cons), " connections killed."))
+  
+}
+
+killDbConnections()
+remove(con)
+#############################################################################################################
+#### start retrieval
+####
+
+#HERE BE QUERIES
+for (i in seq_along(cleanedtbs)) {
+
+  if(cleanedtbs[i]=="tb1") {
+    con <- dbConnect(MySQL(), dbname = dbs[1], username = "usernamehere", password = "pwdhere", host="hosthere")
+    out[[i]]<- as.data.frame(dbGetQuery(con, "SELECT idvalue, listofindicators..., datevalue FROM (
+SELECT @rank := if(@prev_cat = idvalue, @rank+1, 1) AS rank,
+                                        idvalue, listofindicators..., datevalue, @prev_cat := idvalue
+                                        
+                                        FROM tb1,(SELECT @rank:=0, @prev_cat:=\"\")t
+                                        ORDER BY idvalue, date DESC
+    ) TEMP
+                                        
+                                        WHERE rank BETWEEN 2 AND  180;"))
+    killDbConnections()
+
+  }
+}
+
+
+
+####
+####end retrieval
+#############################################################################################################
+#############################################################################################################
+#format dates
+
+for (i in 1:length(out)) {
+  if(nrow(out[[i]]) < 1) {
+    next
+  } else {
+    out[[i]]$date <- as.Date(out[[i]]$datevalue) 
+    }}
+
+
+for (i in 1:length(out)) {
+  out[[i]] <- out[[i]] %>% arrange(datevalue)
+}
+
+
+
+#end format dates
+#############################################################################################################
+#forecast arima model automatically
+autof <- function(histdata) {
+  Forecast <- forecast.Arima(auto.arima(histdata), h = 30)
+}
+#error catching
+errorcatch <- function (x) {
+  return(tryCatch(autof(x), error=function(e) NULL))
+}
+
+
+#############################################################################################################
+#second step objects
+one <- NULL
+oneclean <- NULL
+
+#############################################################################################################
+####start split/apply/combine
+####
+into <- list(oneclean)
+
+
+remove(con)
+names(out) <- totaltbs
+#here check for the unique elements in the names vector of the datasets
+#force dates into order
+
+for (i in 1:length(out)) {
+  if (all(c("listofindicators...") %in% names(out[[i]])) == TRUE) {
+    #split/apply/combine
+    m = melt(select(out[[i]],-datevalue), id.vars = "idvalue")
+    l = split(m, paste(m$idvaue, m$variable))
+    one <- lapply(l, function(x) errorcatch(x$value))
+
+    #substitue
+    if (length(one) <1) {
+      next } else {
+    
+
+    names(oneclean) <- names(one)
+      }
+  }
+}
+
+
+####
+####end split/apply/combine
+#############################################################################################################
+
+
+
+####### into list to insert into table
+into<- list(oneclean)
+
+
+############################################################################################################
+#start reshaping
+#long to wide
+
+# RegEx
+#removes everything before a space (removes the ids and spaces)
+
+
+
+########################################################################################################
+#### data wrangling, after applying testx
+#switch
+#into = into(list of 4)
+#add a column of names
+for (i in 1:length(into)) {
+  if (length(into[[i]]) < 1) {
+    next
+  } else {
+    for (j in 1:length(into[[i]])) {
+      into[[i]][[j]]$id <- gsub("^ [0-9] ", "", names(into[[i]][j]))
+    }}} 
+
+####
+# separate
+for (i in 1:length(into)) {
+  if (length(into[[i]]) < 1) {
+    next
+  }
+  for (j in 1:length(into[[i]])) {
+    
+    into[[i]][[j]] <- into[[i]][[j]] %>%  separate(idvalue, c("idvalue", "types"), sep="separatorhere")}
+}
+
+####
+#change col names
+
+for (i in 1:length(into)) {
+  if (length(into[[i]]) < 1) {
+    next
+  }
+  for (j in 1:length(into[[i]])) {
+    names(into[[i]][[j]]) <- paste(names(into[[i]][[j]]), into[[i]][[j]]$type[1], sep="getseparatorhere")
+  } 
+}
+
+
+
+
+
+into2 <- lapply(into, function(x){ 
+  #get length 
+  current_length=length(x) 
+  if(current_length==0){ 
+    res = x 
+  } else{ 
+    res <- list(even=bind_rows(x[seq(2,current_length,by=2)]), 
+                odd=bind_rows(x[seq(1,current_length,by=2)]) 
+                
+    ) 
+    return(res) 
+  } 
+} 
+)
+
+
+#data.table 1.9.5 changes the format, but doesn't break it
+
+into3 <- vector("list",length(into2))
+
+for (i in 1:length(into2)) {
+  into3[[i]] <- setDT(data.frame(into2[[i]][[1]],into2[[i]][[2]]))
+}
+
+names(into3) <- names(into2)
+
+str(into3)
+
+### add dates and rearrange
+
+if (length(into3[[1]]) > 1) {
+  #begin add dates
+  #get most recent date per group
+  onecleandates <- aggregate(as.Date(out[[1]]$datevalue), list(out[[1]]$idvalue), max)
+  onecleandatess$Group.1 <- as.character(onecleandates$Group.1)
+  setDT(onecleandates)
+  setkey(into3[[1]],idvalues)
+  into3[[1]][onecleandates, date := seq(from=x+1, by=1, length.out=.N), by=.EACHI]
+  #end add dates
+  #begin reshape
+  into3[[1]] <- reshape(as.data.frame(into3[[1]]), timevar="types", idvar=c("id","date"), direction = "wide")
+#end reshape
+}
+
+
+
+#end reshape re'class'ify as data.frame
+
+for (i in 1:length(into3)) {
+  into3[[i]] <- as.data.frame(into3[[i]])
+}
+
+####
+####end reshaping
+############################################################################################################
+####zero correction
+
+
+for (i in 1:length(into3)) {
+  if(length(into3[[i]]) > 1)
+  into3[[i]][into3[[i]]<0] <- 0
+}
+
+
+####end zero correction
+############################################################################################################
+####begin push
+####
+
+killDbConnections()
+#write table into SQL
+
+for (i in 1:length(into3)) {
+  if (length(into3[[i]]) < 1) {
+    next
+  } else if (names(into3[i]) == "tb1") {
+    con <- dbConnect(MySQL(), dbname = dbs[1], username = "usernamehere", password = "pwdhere", host="hosthere")
+      #overwrite forecasted values
+      #
+      for(r in 1:nrow(into3[[i]])) {
+        dbSendQuery(con,sprintf("INSERT INTO %s (%s...,) VALUES (\'%s\...') ON DUPLICATE KEY UPDATE idvalue=VALUES(idvalue),datevalue=VALUES(datevalue); \n", names(into3[i]),colnames(into3[[i]])), into3[[i]][r,])
+      }
+  }
+}
+    
+
+killDbConnections()
+
+####remove everything
+#rm(list=ls())
+#q(save="no")
